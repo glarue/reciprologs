@@ -36,7 +36,7 @@ optional arguments:
   --logging             output a log of BLAST best-hit choice criteria
                         (default: False)
 
-NOTE: Depends on pblast.py
+NOTE: Depends on pblast
 
 """
 import sys
@@ -627,7 +627,7 @@ OVERWRITE = args.overwrite
 ONE_TO_ONE = args.one_to_one
 LOGGING = args.logging
 
-BLAST = 'pblast.py'
+BLAST = 'pblast'
 
 # create a list with the flags/options to pass to the subsequence
 # subprocess calls
