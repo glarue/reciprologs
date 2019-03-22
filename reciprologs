@@ -368,30 +368,22 @@ def aggregate_orthos_strict(orthos):
 
 
 def all_by_all_orthos(ortho_dict):
-    full_groups = {}
+    full_groups = []
     for k, v in ortho_dict.items():
         groups = []
         max_n = len(v)
-        # special case where there is only one element to compare against
-        if max_n == 1:
-            if every_member_match(v, ortho_dict):
-                groups.append(tuple(v))
-        for i in range(2, max_n + 1):
+        # go backward in size and cull subsets as we go
+        for i in range(max_n, 0, -1):
             for g in combinations(v, i):
+                g = set(list(g) + [k])
+                if g in full_groups:
+                    continue
                 if every_member_match(g, ortho_dict):
-                    groups.append(g)
-        full_groups[k] = groups
-        
-    all_sets = []
+                    if any(og.issuperset(g) for og in full_groups):
+                        continue
+                    full_groups.append(g)
 
-    for k, group_list in sorted(full_groups.items()):
-        for g in sorted(group_list, key=len, reverse=True):
-            full_group = set(list(g) + [k])
-            if any(og.issuperset(full_group) for og in all_sets):
-                continue
-            all_sets.append(full_group)
-    
-    return sorted([sorted(s) for s in all_sets])
+    return sorted([sorted(g) for g in full_groups])
 
 
 def every_member_match(members, m_dict):
