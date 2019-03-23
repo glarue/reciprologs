@@ -49,67 +49,7 @@ from operator import itemgetter
 from multiprocessing import cpu_count
 from collections import defaultdict
 from itertools import combinations, permutations
-
-
-def fasta_parse(fasta, delimiter=">", separator="", trim_header=True):
-    """
-    Iterator which takes FASTA as input. Yields
-    header/value pairs. Separator will be
-    used to join the return value; use separator=
-    None to return a list.
-
-    If trim_header, parser will return the
-    FASTA header up to the first space character.
-    Otherwise, it will return the full, unaltered
-    header string.
-
-    """
-    header, seq = None, []
-    with open(fasta) as f:
-        for line in f:
-            if line.startswith(delimiter):
-                if header is not None:
-                    if separator is not None:
-                        seq = separator.join(str(e) for e in seq)
-                    yield header, seq
-                header = line.strip().lstrip(delimiter)
-                if trim_header:
-                    try:
-                        header = header.split()[0]
-                    except IndexError:  # blank header
-                        header = ""
-                seq = []
-            elif line.startswith('#'):
-                continue
-            else:
-                if line.strip():  # don't collect blank lines
-                    seq.append(line.rstrip('\n'))
-        if separator is not None:
-            seq = separator.join(str(e) for e in seq)
-
-        yield header, seq
-
-
-def get_runtime(start_time, p=3):
-    """
-    Takes a start time and optional decimal precision p,
-    returns a string of the total run-time until current
-    time with appropriate units.
-
-    """
-    total = time.time() - start_time  # start with seconds
-    divided = total/60.0
-    if divided < 2:
-        run_time = total
-        units = "seconds"
-    elif divided < 60:
-        run_time = divided
-        units = "minutes"
-    else:
-        run_time = divided/60.0
-        units = "hours"
-    rounded = round(run_time, p)
-    return "{} {}".format(rounded, units)
+from biogl import fasta_parse, get_runtime
 
 
 def parse_blast_line(bl, *args):
