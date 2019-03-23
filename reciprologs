@@ -316,7 +316,7 @@ def all_by_all_orthos(ortho_dict):
         for i in range(max_n, 0, -1):
             for g in combinations(v, i):
                 g = set(list(g) + [k])
-                if g in full_groups:
+                if g in full_groups or len(g) == 1:
                     continue
                 if every_member_match(g, ortho_dict):
                     if any(og.issuperset(g) for og in full_groups):
