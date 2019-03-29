@@ -586,12 +586,6 @@ if len(sys.argv) == 1:
 
 t_start = time.time()
 
-if not USE_GRAPH:
-    print(
-        '[!] networkx library not found; will use brute-force method instead',
-        file=sys.stderr
-    )
-
 args, EXTRA_ARGS = parser.parse_known_args()
 
 RUN_TYPE = args.run_type
@@ -605,6 +599,12 @@ ONE_TO_ONE = args.one_to_one
 LOGGING = args.logging
 
 ALIGN_PROG = 'palign'
+
+if not USE_GRAPH:
+    print(
+        '[!] networkx library not found; will use brute-force method instead',
+        file=sys.stderr
+    )
 
 # create a list with the flags/options to pass to the subsequence
 # subprocess calls
