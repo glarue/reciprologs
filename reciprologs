@@ -51,6 +51,12 @@ from collections import defaultdict
 from itertools import combinations, permutations
 from biogl import fasta_parse, get_runtime
 
+# use networkx library for fast ortholog clustering if available
+try:
+    import networkx as nx
+    USE_GRAPH = True
+except ModuleNotFoundError:
+    USE_GRAPH = False
 
 def parse_blast_line(bl, *args):
     """
@@ -215,6 +221,20 @@ def concatenate(outname, file_list, clean=True):
         [os.remove(fn) for fn in file_list]
 
 
+def parse_run_type(align_type_arg):
+    type_map = {
+        'diamondp': ('diamond', 'blastp'),
+        'diamondx': ('diamond', 'blastx'),
+        'blastn': ('blast', 'blastn'),
+        'blastp': ('blast', 'blastp'),
+        'blastx': ('blast', 'blastx'),
+        'tblastn': ('blast', 'tblastn'),
+        'tblastx': ('blast', 'tblastx'),
+    }
+
+    return type_map[align_type_arg]
+
+
 def aggregate_dict_chained(ortho_dict):
     """
     IN:
@@ -279,7 +299,7 @@ def aggregate_orthos_chained(orthos):
     return sorted(ortho_groups)
 
 
-def aggregate_orthos_strict(orthos):
+def aggregate_orthos_strict(orthos, use_graph=False):
     """
     IN:
     [
@@ -301,8 +321,11 @@ def aggregate_orthos_strict(orthos):
     ]
     
     """
-    o_dict = make_ortho_dict(*orthos)
-    aggregated = all_by_all_orthos(o_dict)
+    if use_graph is True:
+        aggregated = graph_cluster(orthos)
+    else:
+        o_dict = make_ortho_dict(*orthos)
+        aggregated = all_by_all_orthos(o_dict)
 
     return aggregated
 
@@ -378,7 +401,7 @@ def names_from_blastfile(blast_fn):
     return query_fn, subject_fn
 
 
-def pair_reciprologs(query, subject, blast_type, qp, extra):
+def pair_reciprologs(query, subject, run_type, qp, extra):
     # special case of BLASTing against self
     PARALOGS = query == subject
 
@@ -398,19 +421,25 @@ def pair_reciprologs(query, subject, blast_type, qp, extra):
         qm_q = q_lengths
         qm_s = s_lengths 
 
-    # BLAST in both directions (unless PARALOGS)
+    # align in both directions (unless PARALOGS)
     fw_names = unique_filenames(query, subject)
     rv_names = fw_names[::-1]
 
-    fw_fn = '{}-vs-{}.{}'.format(*fw_names, blast_type)
-    rv_fn = '{}-vs-{}.{}'.format(*rv_names, blast_type)
+    fw_fn = '{}-vs-{}.{}'.format(*fw_names, run_type)
+    rv_fn = '{}-vs-{}.{}'.format(*rv_names, run_type)
 
     # use existing BLAST output unless --overwrite is specified
     if not os.path.isfile(fw_fn) or OVERWRITE:
-        forward_args = [BLAST, query, subject, blast_type, '-o', fw_fn] + extra
+        forward_args = [
+            ALIGN_PROG, 
+            query, 
+            subject, 
+            run_type, 
+            '-o', 
+            fw_fn] + extra
         subprocess.run(forward_args)
     else:
-        print('[#] Using existing BLAST output \'{}\''.format(fw_fn))
+        print('[#] Using existing output \'{}\''.format(fw_fn))
     top_forward, fw_win_ledger = get_top_hits(
         fw_fn, PARALOGS, query_match=qm_q, seq_lengths=s_lengths)
     if PARALOGS:
@@ -422,15 +451,15 @@ def pair_reciprologs(query, subject, blast_type, qp, extra):
     else:
         if not os.path.isfile(rv_fn) or OVERWRITE:
             reverse_args = [
-                BLAST, 
+                ALIGN_PROG, 
                 subject, 
                 query, 
-                blast_type, 
+                run_type, 
                 '-o', 
                 rv_fn] + extra
             subprocess.run(reverse_args)    
         else:
-            print('[#] Using existing BLAST output \'{}\''.format(rv_fn))
+            print('[#] Using existing output \'{}\''.format(rv_fn))
         top_reverse, rv_win_ledger = get_top_hits(
             rv_fn, query_match=qm_s, seq_lengths=q_lengths)
 
@@ -479,6 +508,17 @@ def remove_many_to_one(pairs):
     return filtered
 
 
+def graph_cluster(pairwise_sets):
+    graph = nx.Graph()
+    for p_set in pairwise_sets:
+        for pair in p_set:
+            graph.add_edge(*pair)
+    
+    clusters = nx.find_cliques(graph)
+
+    return sorted(clusters, key=len)
+
+
 parser = argparse.ArgumentParser(
     description=(
         'Uses BLAST to find reciprocal best hits '
@@ -492,21 +532,23 @@ parser.add_argument(
     nargs='+'
 )
 parser.add_argument(
-    'blast_type',
+    'run_type',
     choices=[
+        'diamondp',
+        'diamondx',
         'blastn',
         'blastp',
         'blastx',
         'tblastn',
         'tblastx'],
-    help='type of BLAST program to run'
+    help='type of alignment program to run'
 )
 parser.add_argument(
     '-p',
     '--parallel_processes',
     help=(
-        'run the BLAST step using multiple parallel processes; '
-        'without specific input will use half available system CPUs'),
+        'run the alignment step using multiple parallel processes; '
+        'without specific argument, will use half available system CPUs'),
     type=int,
     const=round(cpu_count() / 2),
     nargs='?'
@@ -523,7 +565,7 @@ parser.add_argument(
 )
 parser.add_argument(
     '--overwrite',
-    help='overwrite existing BLAST files (instead of using to bypass BLAST)',
+    help='overwrite existing output files (instead of using to bypass alignment)',
     action='store_true'
 )
 parser.add_argument(
@@ -545,12 +587,16 @@ if len(sys.argv) == 1:
 
 t_start = time.time()
 
+if not USE_GRAPH:
+    print(
+        '[!] networkx library not found; will use brute-force method instead',
+        file=sys.stderr
+    )
+
 args, EXTRA_ARGS = parser.parse_known_args()
 
-BLAST_TYPE = args.blast_type
+RUN_TYPE = args.run_type
 PARALLEL = args.parallel_processes
-# QUERY = args.file_1
-# SUBJECT = args.file_2
 INPUT_FILES = args.input_files
 if len(INPUT_FILES) < 2:
     sys.exit('error: too few files specified (need >1)')
@@ -559,7 +605,7 @@ OVERWRITE = args.overwrite
 ONE_TO_ONE = args.one_to_one
 LOGGING = args.logging
 
-BLAST = 'pblast'
+ALIGN_PROG = 'palign'
 
 # create a list with the flags/options to pass to the subsequence
 # subprocess calls
@@ -575,10 +621,10 @@ for k, v in call_options.items():
 pairwise_reciprolog_sets = []
 for q, s in combinations(sorted(INPUT_FILES), 2):
     reciprolog_set, win_ledger = pair_reciprologs(
-        q, s, BLAST_TYPE, QUERY_PERCENTAGE, optional)
+        q, s, RUN_TYPE, QUERY_PERCENTAGE, optional)
     if LOGGING:
         ledger_file = '{}-{}.{}.log'.format(
-            abbreviate(q), abbreviate(s), BLAST_TYPE)
+            abbreviate(q), abbreviate(s), args.run_type)
         with open(ledger_file, 'w') as lf:
             for query, info in sorted(win_ledger.items()):
                 winner = info['best']
@@ -595,10 +641,10 @@ for q, s in combinations(sorted(INPUT_FILES), 2):
 
 
 # reciprologs = aggregate_orthos_chained(pairwise_reciprolog_sets)
-reciprologs = aggregate_orthos_strict(pairwise_reciprolog_sets)
+reciprologs = aggregate_orthos_strict(pairwise_reciprolog_sets, USE_GRAPH)
 
 basename = '-'.join([abbreviate(f) for f in INPUT_FILES])
-out_file = '{}.{}.reciprologs'.format(basename, BLAST_TYPE)
+out_file = '{}.{}.reciprologs'.format(basename, RUN_TYPE)
 
 with open(out_file, 'w') as out:
     for group in reciprologs:
