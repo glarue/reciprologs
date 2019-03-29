@@ -4,39 +4,39 @@
 # the above sources Python from $PATH
 
 """
-usage: reciprologs.py [-h] [-p [PARALLEL_PROCESSES]] [-t PERCENTAGE]
-                      [--overwrite] [--one_to_one] [--logging]
-                      file_1 file_2 ... [file_1 file_2 ... ...]
-                      {blastn,blastp,blastx,tblastn,tblastx}
+usage: reciprologs [-h] [-p [PARALLEL_PROCESSES]] [-t PERCENTAGE]
+                   [--overwrite] [--one_to_one] [--logging]
+                   file_1 file_2 ... [file_1 file_2 ... ...]
+                   {diamondp,diamondx,blastn,blastp,blastx,tblastn,tblastx}
 
-Uses BLAST to find reciprocal best hits between two or more files.
+Find reciprocal best hits between two or more files.
 
 positional arguments:
   file_1 file_2 ...     files to use to build reciprolog sets (space
                         separated)
-  {blastn,blastp,blastx,tblastn,tblastx}
-                        type of BLAST program to run
+  {diamondp,diamondx,blastn,blastp,blastx,tblastn,tblastx}
+                        type of alignment program to run
 
 optional arguments:
   -h, --help            show this help message and exit
   -p [PARALLEL_PROCESSES], --parallel_processes [PARALLEL_PROCESSES]
-                        run the BLAST step using multiple parallel processes;
-                        without specific input will use half available system
-                        CPUs (default: None)
+                        run the alignment step using multiple parallel
+                        processes; without specific argument, will use half
+                        available system CPUs (default: None)
   -t PERCENTAGE, --query_percentage_threshold PERCENTAGE
                         require a specified fraction of the query length to
                         match in order for a hit to qualify (lowest allowable
                         percentage (default: None)
-  --overwrite           overwrite existing BLAST files (instead of using to
-                        bypass BLAST) (default: False)
+  --overwrite           overwrite existing output files (instead of using to
+                        bypass alignment) (default: False)
   --one_to_one          remove any many-to-one reciprolog relationships in
                         each pairwise set, such that each member of each
                         pairwise comparison is only present exactly one time
                         in output (default: False)
-  --logging             output a log of BLAST best-hit choice criteria
-                        (default: False)
+  --logging             output a log of best-hit choice criteria (default:
+                        False)
 
-NOTE: Depends on pblast
+NOTE: Depends on palign
 
 """
 import sys
@@ -521,8 +521,7 @@ def graph_cluster(pairwise_sets):
 
 parser = argparse.ArgumentParser(
     description=(
-        'Uses BLAST to find reciprocal best hits '
-        'between two or more files.'),
+        'Find reciprocal best hits between two or more files.'),
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
 parser.add_argument(
@@ -548,7 +547,7 @@ parser.add_argument(
     '--parallel_processes',
     help=(
         'run the alignment step using multiple parallel processes; '
-        'without specific argument, will use half available system CPUs'),
+        'without specific argument, will use half of available system CPUs'),
     type=int,
     const=round(cpu_count() / 2),
     nargs='?'
@@ -578,7 +577,7 @@ parser.add_argument(
 )
 parser.add_argument(
     '--logging',
-    help='output a log of BLAST best-hit choice criteria',
+    help='output a log of best-hit choice criteria',
     action='store_true'
 )
 
