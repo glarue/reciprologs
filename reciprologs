@@ -515,6 +515,7 @@ def graph_cluster(pairwise_sets):
             graph.add_edge(*pair)
     
     clusters = nx.find_cliques(graph)
+    clusters = [sorted(c) for c in clusters]
 
     return sorted(clusters, key=len)
 
@@ -546,14 +547,12 @@ parser.add_argument(
     '-p',
     '--parallel_processes',
     help=(
-        'run the alignment step using multiple parallel processes; '
-        'without specific argument, will use half of available system CPUs'),
+        'run the alignment step using multiple parallel processes'),
     type=int,
-    const=round(cpu_count() / 2),
-    nargs='?'
+    default=1
 )
 parser.add_argument(
-    '-t',
+    '-q',
     '--query_percentage_threshold',
     metavar='PERCENTAGE',
     help=(
@@ -561,6 +560,13 @@ parser.add_argument(
         'order for a hit to qualify (lowest allowable percentage'),
     type=float,
     default=None
+)
+parser.add_argument(
+    '--chain',
+    action='store_true',
+    help=(
+        'cluster reciprologs without requiring all-by-all pairwise '
+        'relationships, e.g. A-B, A-C, A-D --> A-B-C-D')
 )
 parser.add_argument(
     '--overwrite',
@@ -597,6 +603,7 @@ QUERY_PERCENTAGE = args.query_percentage_threshold
 OVERWRITE = args.overwrite
 ONE_TO_ONE = args.one_to_one
 LOGGING = args.logging
+CHAIN = args.chain
 
 ALIGN_PROG = 'palign'
 
@@ -638,9 +645,10 @@ for q, s in combinations(sorted(INPUT_FILES), 2):
 
     pairwise_reciprolog_sets.append(reciprolog_set)
 
-
-# reciprologs = aggregate_orthos_chained(pairwise_reciprolog_sets)
-reciprologs = aggregate_orthos_strict(pairwise_reciprolog_sets, USE_GRAPH)
+if CHAIN:
+    reciprologs = aggregate_orthos_chained(pairwise_reciprolog_sets)
+else:
+    reciprologs = aggregate_orthos_strict(pairwise_reciprolog_sets, USE_GRAPH)
 
 basename = '-'.join([abbreviate(f) for f in INPUT_FILES])
 out_file = '{}.{}.reciprologs'.format(basename, RUN_TYPE)
