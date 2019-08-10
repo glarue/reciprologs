@@ -1,4 +1,5 @@
-#!/usr/bin/python3
+#!/usr/local/bin/python3
+##!/usr/bin/python3
 # the above uses specific Python version; allows script name in top
 ##!/usr/bin/env python3  
 # the above sources Python from $PATH
@@ -124,7 +125,21 @@ def is_better(challenger, defender, seq_lengths=None):
         return False
 
 
-def get_top_hits(blast, paralogs=False, query_match=None, seq_lengths=None):
+def get_prefix(seq_id, delimiter):
+    split_list = re.split(delimiter, seq_id, maxsplit=1)
+    split_list = [s for s in split_list if s]
+
+    return split_list[0]
+
+
+def get_top_hits(
+    blast, 
+    paralogs=False, 
+    query_match=None, 
+    seq_lengths=None,
+    ignore_same_id=False,
+    ignore_same_prefix=False,
+    query_list=None):
     results = {}
     # dictionary to store tie-broken matches
     win_ledger = defaultdict(lambda: defaultdict(set))
@@ -140,10 +155,18 @@ def get_top_hits(blast, paralogs=False, query_match=None, seq_lengths=None):
                 'score': score,
                 'evalue': evalue
             }
+            if query_list and q not in query_list:
+                continue
+
             # do not consider hits to self if BLASTing against self,
             # but allow query/subject names to be the same
-            if paralogs and q == s:
+            if q == s and (paralogs is True or ignore_same_id is True):
+            # if paralogs and q == s:
                 continue
+            if ignore_same_prefix is not None:
+                prefix = ignore_same_prefix
+                if get_prefix(q, prefix) == get_prefix(s, prefix):
+                    continue
             if query_match:
                 # use query_match dictionary to compare query lengths to
                 # match lengths to exclude matches where query percentage 
@@ -401,7 +424,7 @@ def names_from_blastfile(blast_fn):
     return query_fn, subject_fn
 
 
-def pair_reciprologs(query, subject, run_type, qp, extra):
+def pair_reciprologs(query, subject, run_type, qp, extra, agg_blast=None):
     # special case of BLASTing against self
     PARALOGS = query == subject
 
@@ -413,6 +436,11 @@ def pair_reciprologs(query, subject, run_type, qp, extra):
         for h, s in fasta_parse(fa):
             target[h] = len(s)
 
+    # get sets of query and subject IDs to use in filtering
+    # BLAST lines to only relevant hits
+    q_list = set(q_lengths.keys())
+    s_list = set(s_lengths.keys())    
+
     # dictionaries are used as flag in top hits function
     # so need to be set here
     if not qp:
@@ -421,12 +449,16 @@ def pair_reciprologs(query, subject, run_type, qp, extra):
         qm_q = q_lengths
         qm_s = s_lengths 
 
-    # align in both directions (unless PARALOGS)
-    fw_names = unique_filenames(query, subject)
-    rv_names = fw_names[::-1]
+    if agg_blast is not None:
+        fw_fn = agg_blast
+        rv_fn = agg_blast
+    else:
+        # align in both directions (unless PARALOGS)
+        fw_names = unique_filenames(query, subject)
+        rv_names = fw_names[::-1]
 
-    fw_fn = '{}-vs-{}.{}'.format(*fw_names, run_type)
-    rv_fn = '{}-vs-{}.{}'.format(*rv_names, run_type)
+        fw_fn = '{}-vs-{}.{}'.format(*fw_names, run_type)
+        rv_fn = '{}-vs-{}.{}'.format(*rv_names, run_type)
 
     # use existing BLAST output unless --overwrite is specified
     if not os.path.isfile(fw_fn) or OVERWRITE:
@@ -434,14 +466,20 @@ def pair_reciprologs(query, subject, run_type, qp, extra):
             ALIGN_PROG, 
             query, 
             subject, 
-            run_type, 
+            run_type,
             '-o', 
             fw_fn] + extra
         subprocess.run(forward_args)
     else:
         print('[#] Using existing output \'{}\''.format(fw_fn))
     top_forward, fw_win_ledger = get_top_hits(
-        fw_fn, PARALOGS, query_match=qm_q, seq_lengths=s_lengths)
+        fw_fn, 
+        PARALOGS, 
+        query_match=qm_q, 
+        seq_lengths=s_lengths,
+        ignore_same_id=IGNORE_SAME_ID,
+        ignore_same_prefix=IGNORE_SAME_PREFIX,
+        query_list=q_list)
     if PARALOGS:
         top_reverse = top_forward
         rv_win_ledger = defaultdict(list)
@@ -457,11 +495,16 @@ def pair_reciprologs(query, subject, run_type, qp, extra):
                 run_type, 
                 '-o', 
                 rv_fn] + extra
-            subprocess.run(reverse_args)    
+            subprocess.run(reverse_args)
         else:
             print('[#] Using existing output \'{}\''.format(rv_fn))
         top_reverse, rv_win_ledger = get_top_hits(
-            rv_fn, query_match=qm_s, seq_lengths=q_lengths)
+            rv_fn, 
+            query_match=qm_s, 
+            seq_lengths=q_lengths,
+            ignore_same_id=IGNORE_SAME_ID,
+            ignore_same_prefix=IGNORE_SAME_PREFIX,
+            query_list=s_list)
 
     # Filter for reciprocal best hits
     reciprocal_hits = get_reciprocals(top_forward, top_reverse)
@@ -569,6 +612,31 @@ parser.add_argument(
         'relationships, e.g. A-B, A-C, A-D --> A-B-C-D')
 )
 parser.add_argument(
+    '--ignore_same_id',
+    action='store_true',
+    help='ignore hits where both query and subject have identical IDs'
+)
+parser.add_argument(
+    '--ignore_same_prefix',
+    metavar='<prefix_delimiter>',
+    help=(
+        'ignore hits where both query and subject have identical prefixes, '
+        'where the prefix for each ID is delimited by the specified '
+        '<prefix_delimiter>')
+)
+parser.add_argument(
+    '-o',
+    '--output',
+    help='output filename (if no argument is given, defaults to stdout)',
+    nargs='?',
+    const='stdout'
+)
+parser.add_argument(
+    '-b',
+    '--blast_file',
+    help='aggregated BLAST output to use (both directions)'
+)
+parser.add_argument(
     '--overwrite',
     help='overwrite existing output files (instead of using to bypass alignment)',
     action='store_true'
@@ -604,6 +672,10 @@ OVERWRITE = args.overwrite
 ONE_TO_ONE = args.one_to_one
 LOGGING = args.logging
 CHAIN = args.chain
+IGNORE_SAME_ID = args.ignore_same_id
+IGNORE_SAME_PREFIX = args.ignore_same_prefix
+BLAST_FILE = args.blast_file
+OUTPUT_FILE = args.output
 
 ALIGN_PROG = 'palign'
 
@@ -627,7 +699,7 @@ for k, v in call_options.items():
 pairwise_reciprolog_sets = []
 for q, s in combinations(sorted(INPUT_FILES), 2):
     reciprolog_set, win_ledger = pair_reciprologs(
-        q, s, RUN_TYPE, QUERY_PERCENTAGE, optional)
+        q, s, RUN_TYPE, QUERY_PERCENTAGE, optional, agg_blast=BLAST_FILE)
     if LOGGING:
         ledger_file = '{}-{}.{}.log'.format(
             abbreviate(q), abbreviate(s), args.run_type)
@@ -651,17 +723,30 @@ else:
     reciprologs = aggregate_orthos_strict(pairwise_reciprolog_sets, USE_GRAPH)
 
 basename = '-'.join([abbreviate(f) for f in INPUT_FILES])
-out_file = '{}.{}.reciprologs'.format(basename, RUN_TYPE)
 
-with open(out_file, 'w') as out:
-    for group in reciprologs:
-        out.write('\t'.join(group) + '\n')
+if OUTPUT_FILE:
+    if OUTPUT_FILE == 'stdout':
+        out = sys.stdout
+        out_string = ''
+    else:
+        out = open(OUTPUT_FILE, 'w')
+        out_string = ': {}'.format(OUTPUT_FILE)
+else:
+    OUTPUT_FILE = '{}.{}.reciprologs'.format(basename, RUN_TYPE)
+    out = open(OUTPUT_FILE, 'w')
+    out_string = ': {}'.format(OUTPUT_FILE)
+
+for group in reciprologs:
+    out.write('\t'.join(group) + '\n')
+
+if OUTPUT_FILE != 'stdout':
+    out.close()
 
 runtime = get_runtime(t_start)
 
 print(
-    '[#] Job finished in {}; {} reciprolog sets found: '
-    '\'{}\''.format(runtime, len(reciprologs), out_file),
+    '[#] Job finished in {}; {} reciprolog sets found{}'
+    .format(runtime, len(reciprologs), out_string),
     file=sys.stderr)
 
 sys.exit(0)
