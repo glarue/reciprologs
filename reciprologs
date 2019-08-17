@@ -4,6 +4,12 @@
 ##!/usr/bin/env python3  
 # the above sources Python from $PATH
 
+# authorship information
+__author__ = 'Graham E. Larue'
+__maintainer__ = "Graham E. Larue"
+__email__ = 'egrahamlarue@gmail.com'
+__license__ = 'GPL'
+
 """
 usage: reciprologs [-h] [-p [PARALLEL_PROCESSES]] [-t PERCENTAGE]
                    [--overwrite] [--one_to_one] [--logging]
