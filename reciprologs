@@ -430,7 +430,14 @@ def names_from_blastfile(blast_fn):
     return query_fn, subject_fn
 
 
-def pair_reciprologs(query, subject, run_type, qp, extra, agg_blast=None):
+def pair_reciprologs(
+    query, 
+    subject, 
+    run_type, 
+    qp, 
+    extra, 
+    agg_blast=None, 
+    file_dirs=None):
     # special case of BLASTing against self
     PARALOGS = query == subject
 
@@ -453,20 +460,41 @@ def pair_reciprologs(query, subject, run_type, qp, extra, agg_blast=None):
         qm_q, qm_s = {}, {}
     else:
         qm_q = q_lengths
-        qm_s = s_lengths 
+        qm_s = s_lengths
+
+    run_files = {
+        'forward': None,
+        'reverse': None
+    } 
 
     if agg_blast is not None:
-        fw_fn = agg_blast
-        rv_fn = agg_blast
+        run_files['forward'] = agg_blast
+        run_files['reverse'] = agg_blast
+        # fw_fn = agg_blast
+        # rv_fn = agg_blast
     else:
         # align in both directions (unless PARALOGS)
         fw_names = unique_filenames(query, subject)
         rv_names = fw_names[::-1]
 
-        fw_fn = '{}-vs-{}.{}'.format(*fw_names, run_type)
-        rv_fn = '{}-vs-{}.{}'.format(*rv_names, run_type)
+        run_files['forward'] = '{}-vs-{}.{}'.format(*fw_names, run_type)
+        run_files['reverse'] = '{}-vs-{}.{}'.format(*rv_names, run_type)
+        # fw_fn = '{}-vs-{}.{}'.format(*fw_names, run_type)
+        # rv_fn = '{}-vs-{}.{}'.format(*rv_names, run_type)
+
+    if file_dirs:
+        for d in file_dirs:
+            file_list = os.listdir(d)
+            for direction, fn in run_files.items():
+                if fn in file_list:
+                    run_files[direction] = os.path.join(
+                        os.path.abspath(d), fn
+                    )
 
     # use existing BLAST output unless --overwrite is specified
+    fw_fn = run_files['forward']
+    rv_fn = run_files['reverse']
+
     if not os.path.isfile(fw_fn) or OVERWRITE:
         forward_args = [
             ALIGN_PROG, 
@@ -638,6 +666,12 @@ parser.add_argument(
     const='stdout'
 )
 parser.add_argument(
+    '-d',
+    '--alignment_source_directory',
+    help='check for existing alignment files to use in this directory first',
+    nargs='+'
+)
+parser.add_argument(
     '-b',
     '--blast_file',
     help='aggregated BLAST output to use (both directions)'
@@ -682,6 +716,7 @@ IGNORE_SAME_ID = args.ignore_same_id
 IGNORE_SAME_PREFIX = args.ignore_same_prefix
 BLAST_FILE = args.blast_file
 OUTPUT_FILE = args.output
+ALIGNMENT_SOURCE_DIRS = args.alignment_source_directory
 
 ALIGN_PROG = 'palign'
 
@@ -705,7 +740,13 @@ for k, v in call_options.items():
 pairwise_reciprolog_sets = []
 for q, s in combinations(sorted(INPUT_FILES), 2):
     reciprolog_set, win_ledger = pair_reciprologs(
-        q, s, RUN_TYPE, QUERY_PERCENTAGE, optional, agg_blast=BLAST_FILE)
+        q, 
+        s, 
+        RUN_TYPE, 
+        QUERY_PERCENTAGE, 
+        optional, 
+        agg_blast=BLAST_FILE,
+        file_dirs=ALIGNMENT_SOURCE_DIRS)
     if LOGGING:
         ledger_file = '{}-{}.{}.log'.format(
             abbreviate(q), abbreviate(s), args.run_type)
