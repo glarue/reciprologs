@@ -306,7 +306,7 @@ def aggregate_dict_chained(ortho_dict):
     return master
 
 
-def aggregate_orthos_chained(orthos):
+def aggregate_orthos_chained(orthos, use_graph=False):
     """
     IN:
     [
@@ -319,12 +319,15 @@ def aggregate_orthos_chained(orthos):
     [['a', 'b', 'c', 'd', 'e', 'f', 'g'], ['w', 'x', 'y', 'z']]
     
     """
-    o_dict = make_ortho_dict(*orthos)
-    aggregated = aggregate_dict_chained(o_dict)
-    ortho_groups = []
-    for k, v in aggregated.items():
-        combined = tuple(v) + (k,)
-        ortho_groups.append(sorted(combined))
+    if use_graph:
+        ortho_groups = graph_cluster(orthos, chain=True)
+    else:
+        o_dict = make_ortho_dict(*orthos)
+        aggregated = aggregate_dict_chained(o_dict)
+        ortho_groups = []
+        for k, v in aggregated.items():
+            combined = tuple(v) + (k,)
+            ortho_groups.append(sorted(combined))
     
     return sorted(ortho_groups)
 
@@ -340,14 +343,14 @@ def aggregate_orthos_strict(orthos, use_graph=False):
     ]
     OUT:
     [
-        ('a', 'b', 'c'), 
-        ('a', 'd'), 
-        ('b', 'c', 'e'), 
-        ('b', 'c', 'f'), 
-        ('c', 'g'), 
-        ('w', 'z'), 
-        ('x', 'z'), 
-        ('y', 'z')
+        ['x', 'z'],
+        ['y', 'z'],
+        ['w', 'z'],
+        ['a', 'd'],
+        ['c', 'g'],
+        ['b', 'c', 'f'],
+        ['b', 'c', 'e'],
+        ['a', 'b', 'c']
     ]
     
     """
@@ -586,13 +589,16 @@ def remove_many_to_one(pairs):
     return filtered
 
 
-def graph_cluster(pairwise_sets):
+def graph_cluster(pairwise_sets, chain=False):
     graph = nx.Graph()
     for p_set in pairwise_sets:
         for pair in p_set:
             graph.add_edge(*pair)
     
-    clusters = nx.find_cliques(graph)
+    if chain:
+        clusters = nx.connected_components(graph)
+    else:
+        clusters = nx.find_cliques(graph)
     clusters = [sorted(c) for c in clusters]
 
     return sorted(clusters, key=len)
@@ -696,9 +702,6 @@ parser.add_argument(
     action='store_true'
 )
 
-if len(sys.argv) == 1:
-    sys.exit(parser.print_help())
-
 t_start = time.time()
 
 args, EXTRA_ARGS = parser.parse_known_args()
@@ -766,7 +769,7 @@ for q, s in combinations(sorted(INPUT_FILES), 2):
     pairwise_reciprolog_sets.append(reciprolog_set)
 
 if CHAIN:
-    reciprologs = aggregate_orthos_chained(pairwise_reciprolog_sets)
+    reciprologs = aggregate_orthos_chained(pairwise_reciprolog_sets, USE_GRAPH)
 else:
     reciprologs = aggregate_orthos_strict(pairwise_reciprolog_sets, USE_GRAPH)
 
