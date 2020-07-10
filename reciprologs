@@ -168,7 +168,6 @@ def get_top_hits(
             # do not consider hits to self if BLASTing against self,
             # but allow query/subject names to be the same
             if q == s and (paralogs is True or ignore_same_id is True):
-            # if paralogs and q == s:
                 continue
             if ignore_same_prefix is not None:
                 prefix = ignore_same_prefix
@@ -474,8 +473,6 @@ def pair_reciprologs(
     if agg_blast is not None:
         run_files['forward'] = agg_blast
         run_files['reverse'] = agg_blast
-        # fw_fn = agg_blast
-        # rv_fn = agg_blast
     else:
         # align in both directions (unless PARALOGS)
         fw_names = unique_filenames(query, subject)
@@ -483,8 +480,6 @@ def pair_reciprologs(
 
         run_files['forward'] = '{}-vs-{}.{}'.format(*fw_names, run_type)
         run_files['reverse'] = '{}-vs-{}.{}'.format(*rv_names, run_type)
-        # fw_fn = '{}-vs-{}.{}'.format(*fw_names, run_type)
-        # rv_fn = '{}-vs-{}.{}'.format(*rv_names, run_type)
 
     if file_dirs:
         for d in file_dirs:
