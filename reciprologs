@@ -160,7 +160,8 @@ def get_top_hits(
             challenger = {
                 'name': s,
                 'score': score,
-                'evalue': evalue
+                'evalue': evalue,
+                'length': length
             }
             if query_list and q not in query_list:
                 continue
@@ -196,7 +197,12 @@ def get_top_hits(
                 new_best_hit = True
 
             if new_best_hit is True:
-                results[q] = {"name": s, "score": score, "evalue": evalue}
+                results[q] = {
+                    "name": s, 
+                    "score": score, 
+                    "evalue": evalue, 
+                    "length": length
+                }
 
     return results, win_ledger
 
@@ -504,7 +510,7 @@ def pair_reciprologs(
             fw_fn] + extra
         subprocess.run(forward_args)
     else:
-        print('[#] Using existing output \'{}\''.format(fw_fn))
+        print('[#] Using existing output \'{}\''.format(fw_fn), file=sys.stderr)
     top_forward, fw_win_ledger = get_top_hits(
         fw_fn, 
         PARALOGS, 
@@ -530,7 +536,7 @@ def pair_reciprologs(
                 rv_fn] + extra
             subprocess.run(reverse_args)
         else:
-            print('[#] Using existing output \'{}\''.format(rv_fn))
+            print('[#] Using existing output \'{}\''.format(rv_fn), file=sys.stderr)
         top_reverse, rv_win_ledger = get_top_hits(
             rv_fn, 
             query_match=qm_s, 
@@ -665,7 +671,7 @@ parser.add_argument(
     '--output',
     help='output filename (if no argument is given, defaults to stdout)',
     nargs='?',
-    const='stdout'
+    default='stdout'
 )
 parser.add_argument(
     '-d',
