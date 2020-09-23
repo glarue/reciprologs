@@ -1,3 +1,4 @@
+```
 usage: reciprologs [-h] [-p PARALLEL_PROCESSES] [-q PERCENTAGE] [--chain]
                    [--ignore_same_id]
                    [--ignore_same_prefix <prefix_delimiter>] [-o [OUTPUT]]
@@ -50,3 +51,4 @@ optional arguments:
                         in output (default: False)
   --logging             output a log of best-hit choice criteria (default:
                         False)
+```
