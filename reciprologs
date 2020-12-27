@@ -4,6 +4,7 @@
 ##!/usr/bin/python3
 # the above uses specific Python version; allows script name in top
 
+#TODO build-in query subsetting functionality
 
 # authorship information
 __author__ = 'Graham E. Larue'
@@ -53,6 +54,7 @@ import os
 import time
 import argparse
 import re
+import shutil
 from operator import itemgetter
 from multiprocessing import cpu_count
 from collections import defaultdict
@@ -229,12 +231,14 @@ def get_reciprocals(d1, d2):
                     score_tuple = tuple(sorted([score, r_score]))
                     hit_pair.append(score_tuple)
                     reciprologs.add(tuple(hit_pair))
+
     return sorted(reciprologs)
 
 
 def abbreviate(name, delimiter="."):
     name = os.path.basename(name)  # in case of non-local file path
     abbreviation = name.split(delimiter)[0]
+
     return abbreviation
 
 
@@ -439,12 +443,103 @@ def names_from_blastfile(blast_fn):
     return query_fn, subject_fn
 
 
+def make_subset(fasta, output_fn, keep_file=None, keep_list=None):
+    if not (keep_file or keep_list):
+        print(
+            '[!] Cannot make subset for {} - aborting'.format(fasta),
+            file=sys.stderr
+    )
+        sys.exit(1)
+    keep_list_set = set()
+    keep_file_set = set()
+    if keep_list is not None:
+        for e in keep_list:
+            keep_list_set.add(e)
+    if keep_file is not None:
+        with open(keep_file) as f:
+            for l in f:
+                keep_file_set.add(l.strip())
+    # get the union of the two sets of headers to include any new additions
+    keep_set = keep_list_set | keep_file_set
+    # write combined set to new <keep_file> if there are entries in 
+    # <keep_list_set> that were not in the original <keep_file>
+    new_keeps = len(keep_set) - len(keep_file_set)
+    if new_keeps > 0 and keep_file is not None:
+        print(
+            '[#] Updating {} with {} new entries'.format(keep_file, new_keeps)
+        , file=sys.stderr)
+        with open(keep_file, 'w') as new_keep_file:
+            for h in keep_set:
+                new_keep_file.write(h + '\n')
+    kept = 0
+    with open(output_fn, 'w') as out:
+        for h, s in fasta_parse(fasta, trim_header=False):
+            trunc_header = h.split()[0]
+            if trunc_header in keep_set:
+                record = '>{}\n{}\n'.format(h, s)
+                out.write(record)
+                kept += 1
+    
+    return output_fn, kept
+
+
+def subset_name(fn, file_tag='subset'):
+    if type(file_tag) is not str:
+        file_tag = ''
+    out_fn = '{}_{}.fa'.format(abbreviate(fn), file_tag)
+
+    return out_fn
+
+
+def align(aligner, query, subject, run_type, output_name, extra_args=None):
+    if extra_args is None:
+        extra_args = []
+    aligner_args = [
+        aligner, 
+        query, 
+        subject, 
+        run_type,
+        '-o', 
+        output_name
+    ]
+    result = subprocess.run(aligner_args + extra_args)
+
+    return result
+
+
+def alignment_filenames(query, subject, run_type):
+    run_files = {}
+
+    fw_names = unique_filenames(query, subject)
+    rv_names = unique_filenames(subject, query)
+
+    run_files['forward'] = '{}-vs-{}.{}'.format(*fw_names, run_type)
+    run_files['reverse'] = '{}-vs-{}.{}'.format(*rv_names, run_type)
+
+    return run_files
+
+
+# def reciprocal_alignment(
+#     query, subject, run_type, subset_index=None):
+#     # 1. blast subset1 --> full2
+#     # 2. blast subset2 + subset1 hits --> full1
+#     # 3. 
+
+def seq_lengths(fasta):
+    l = {}
+    for h, s in fasta_parse(fasta):
+        l[h] = len(s)
+    
+    return l
+
 def pair_reciprologs(
-    query, 
-    subject, 
-    run_type, 
-    qp, 
-    extra, 
+    query,
+    subject,
+    run_type,
+    qp,
+    extra,
+    query_subset=None,
+    subject_subset=None,
     agg_blast=None, 
     file_dirs=None):
     # special case of BLASTing against self
@@ -474,18 +569,37 @@ def pair_reciprologs(
     run_files = {
         'forward': None,
         'reverse': None
-    } 
+    }
+
+    # define queries and subjects for both directions; this needs to be 
+    # done explicitly due to possible subsetting
+    fw_q = query
+    fw_s = subject
+    rv_q = subject
+    rv_s = query
 
     if agg_blast is not None:
         run_files['forward'] = agg_blast
         run_files['reverse'] = agg_blast
     else:
-        # align in both directions (unless PARALOGS)
-        fw_names = unique_filenames(query, subject)
-        rv_names = fw_names[::-1]
+        if query_subset:
+            fw_q_subset_name = subset_name(fw_q)
+            fw_q, fw_kept_n = make_subset(
+                fw_q, fw_q_subset_name, keep_file=query_subset
+            )
+            if fw_kept_n == 0:
+                print('[!] Subset size of {} = 0; aborting.'.format(fw_q))
+                sys.exit(1)
+            else:
+                print(
+                    '[#] Subset size for {}: {}'.format(fw_q, fw_kept_n), 
+                    file=sys.stderr
+                )
+        if subject_subset:
+            rv_q = subset_name(rv_q)
 
-        run_files['forward'] = '{}-vs-{}.{}'.format(*fw_names, run_type)
-        run_files['reverse'] = '{}-vs-{}.{}'.format(*rv_names, run_type)
+        # align in both directions (unless PARALOGS)
+        run_files = alignment_filenames(fw_q, fw_s, run_type)
 
     if file_dirs:
         for d in file_dirs:
@@ -501,16 +615,27 @@ def pair_reciprologs(
     rv_fn = run_files['reverse']
 
     if not os.path.isfile(fw_fn) or OVERWRITE:
-        forward_args = [
-            ALIGN_PROG, 
-            query, 
-            subject, 
-            run_type,
-            '-o', 
-            fw_fn] + extra
-        subprocess.run(forward_args)
+        fw_align = align(
+            ALIGN_PROG, fw_q, fw_s, run_type, fw_fn, extra_args=extra
+        )
+        if fw_align.returncode != 0:
+            sys.exit(
+                '[!] ERROR: alignment failed: {} (return code: {})'
+                .format(fw_fn, fw_align.returncode)
+                )
+        # forward_args = [
+        #     ALIGN_PROG, 
+        #     fw_q, 
+        #     fw_s, 
+        #     run_type,
+        #     '-o', 
+        #     fw_fn] + extra
+        # subprocess.run(forward_args)
     else:
-        print('[#] Using existing output \'{}\''.format(fw_fn), file=sys.stderr)
+        print(
+            '[#] Using existing output \'{}\''.format(fw_fn), 
+            file=sys.stderr
+        )
     top_forward, fw_win_ledger = get_top_hits(
         fw_fn, 
         PARALOGS, 
@@ -522,21 +647,46 @@ def pair_reciprologs(
     if PARALOGS:
         top_reverse = top_forward
         rv_win_ledger = defaultdict(list)
-        ## don't need to run BLAST again; process the same file
-        # top_reverse, rv_win_ledger = get_top_hits(
-        #     fw_fn, PARALOGS, query_match=qm_q)
     else:
+        if subject_subset:
+            # include any 1-way hits to the subject in the reverse queries
+            top_hit_subset = [h['name'] for h in top_forward.values()]
+            rv_q, rv_kept_n = make_subset(
+                subject,
+                rv_q,
+                keep_file=subject_subset, 
+                keep_list=top_hit_subset
+            )
+            if rv_kept_n == 0:
+                print('[!] Subset size of {} = 0; aborting.'.format(rv_q))
+                sys.exit(1)
+            else:
+                print(
+                    '[#] Subset size for {}: {}'.format(rv_q, rv_kept_n), 
+                    file=sys.stderr
+                )
         if not os.path.isfile(rv_fn) or OVERWRITE:
-            reverse_args = [
-                ALIGN_PROG, 
-                subject, 
-                query, 
-                run_type, 
-                '-o', 
-                rv_fn] + extra
-            subprocess.run(reverse_args)
+            rv_align = align(
+                ALIGN_PROG, rv_q, rv_s, run_type, rv_fn, extra_args=extra
+            )
+            if rv_align.returncode != 0:
+                sys.exit(
+                    '[!] ERROR: alignment failed: {} (return code: {})'
+                    .format(rv_fn, rv_align.returncode)
+                )
+            # reverse_args = [
+            #     ALIGN_PROG, 
+            #     rv_q, 
+            #     rv_s, 
+            #     run_type, 
+            #     '-o', 
+            #     rv_fn] + extra
+            # subprocess.run(reverse_args)
         else:
-            print('[#] Using existing output \'{}\''.format(rv_fn), file=sys.stderr)
+            print(
+                '[#] Using existing output \'{}\''.format(rv_fn), 
+                file=sys.stderr
+            )
         top_reverse, rv_win_ledger = get_top_hits(
             rv_fn, 
             query_match=qm_s, 
@@ -544,6 +694,55 @@ def pair_reciprologs(
             ignore_same_id=IGNORE_SAME_ID,
             ignore_same_prefix=IGNORE_SAME_PREFIX,
             query_list=s_list)
+        if query_subset:
+            # update the query subset with IDs with hits in the reverse
+            # direction to allow accumulation of additional hits in runs of 
+            # > 2 files
+            top_hit_subset = [h['name'] for h in top_reverse.values()]
+            fw_residual = set(top_hit_subset) - set(top_forward.keys())
+
+            if fw_residual:
+                rsd_name = subset_name(query, file_tag='residual')
+                #TODO the fact that this uses <keep_file> means that all the 
+                # entries in that file are read in as well, so this re-runs 
+                # previous entries unnecessarily. To fix the other issues, 
+                # once all the pairwise subsets are run, there needs to be another 
+                # go-round that aligns any entries that may have accumulated during 
+                # alignment of other pairs - this could involve checking the alignment 
+                # output for each pair to see what's been run already against the 
+                # <keep_file> (assuming everything's been stored there) and then aligning 
+                # the difference.
+                rsd_q, rsd_kept_n = make_subset(
+                    query,
+                    rsd_name,
+                    keep_file=query_subset, 
+                    keep_list=fw_residual
+                )
+                print(
+                    '[#] Aligning {} hits from "{}" back to "{}"'
+                    .format(rsd_kept_n, rv_fn, subject), 
+                    file=sys.stderr
+                )
+                run_files = alignment_filenames(rsd_q, subject, run_type)
+                rsd_fn = run_files['forward']
+                rsd_align = align(
+                    ALIGN_PROG, rsd_q, subject, run_type, rsd_fn, extra_args=extra
+                )
+                if rsd_align.returncode != 0:
+                    sys.exit(
+                        '[!] ERROR: alignment failed: {} (return code: {})'
+                        .format(rsd_fn, rsd_align.returncode)
+                    )
+                top_rsd, rsd_win_ledger = get_top_hits(
+                    rsd_fn,
+                    query_match=qm_q, 
+                    seq_lengths=s_lengths,
+                    ignore_same_id=IGNORE_SAME_ID,
+                    ignore_same_prefix=IGNORE_SAME_PREFIX,
+                    query_list=q_list
+                )
+                top_forward.update(top_rsd)
+
 
     # Filter for reciprocal best hits
     reciprocal_hits = get_reciprocals(top_forward, top_reverse)
@@ -595,7 +794,6 @@ def graph_cluster(pairwise_sets, chain=False):
     for p_set in pairwise_sets:
         for pair in p_set:
             graph.add_edge(*pair)
-    
     if chain:
         clusters = nx.connected_components(graph)
     else:
@@ -605,9 +803,262 @@ def graph_cluster(pairwise_sets, chain=False):
     return sorted(clusters, key=len)
 
 
+def subset_size_check(input_file, subset, kept_n):
+    if kept_n == 0:
+        print('[!] Subset size of {} = 0; aborting.'.format(subset))
+        sys.exit(1)
+    else:
+        print(
+            '[#] Subset size for {}: {}'.format(input_file, kept_n), 
+            file=sys.stderr
+        )
+
+
+def log_ledger(q, s, run_type, win_ledger):
+    ledger_file = '{}-{}.{}.log'.format(
+        abbreviate(q), abbreviate(s), run_type)
+    with open(ledger_file, 'w') as lf:
+        for query, info in sorted(win_ledger.items()):
+            winner = info['best']
+            loser_tuples = info['losers']
+            lf.write('>{}\t[{}]\n'.format(winner, query))
+            for loser in sorted(loser_tuples):
+                lf.write('\t'.join(loser) + '\n')
+
+
+def get_alignments(
+    pairs_index, 
+    aligner, 
+    run_type, 
+    extra,
+    overwrite=False, 
+    file_dirs=None,
+    blast_file=None
+):
+    """
+    <pairs_index> is a dictionary of the form {label: (q, s), ...}
+    
+    """
+    # get reciprologs for each pairwise permutation of files [(1, 2), (2, 1), ...]
+    alignment_index = {}
+    for alignment_key, pair in pairs_index.items():
+        q, s = pair
+        # this block might want to move to above the preceding if block...?
+        if blast_file:
+            alignment_index[alignment_key] = blast_file
+            continue
+        align_fn = alignment_filenames(q, s, run_type)['forward']
+        if file_dirs:
+            for d in file_dirs:
+                file_list = os.listdir(d)
+                if align_fn in file_list:
+                    align_fn = os.path.join(
+                            os.path.abspath(d), align_fn
+                    )
+                    break
+        if not os.path.isfile(align_fn) or overwrite is True:
+            alignment = align(
+                aligner, q, s, run_type, align_fn, extra_args=extra
+            )
+            if alignment.returncode != 0:
+                sys.exit(
+                    '[!] ERROR: alignment failed: {} (return code: {})'
+                    .format(align_fn, alignment.returncode)
+                    )
+        else:
+            print(
+                '[#] Using existing output \'{}\''.format(align_fn), 
+                file=sys.stderr
+            )
+        alignment_index[alignment_key] = align_fn
+    
+    return alignment_index
+
+
+def align_residuals(alignments, aligner, residual_index, args, overwrite=False):
+    alignment_index = {}
+    run_type = args.run_type
+    extra = args.extra
+    for aln_key, aln in sorted(alignments.items(), key=lambda x: sorted(x[0])):
+        q, s = aln_key
+        if q not in residual_index:
+            continue
+        r_sub_set = residual_index[q]
+        r_sub_fn = subset_name(q, file_tag='residual')
+        r_sub, kept_n = make_subset(q, r_sub_fn, keep_list=r_sub_set)
+        subset_size_check(q, r_sub, kept_n)
+        align_fn = alignment_filenames(q, s, run_type)['forward']
+        if not os.path.isfile(align_fn) or overwrite is True:
+            residual_aln = align(
+                aligner, r_sub, s, run_type, align_fn, extra_args=extra)
+            if residual_aln.returncode != 0:
+                sys.exit(
+                    '[!] ERROR: alignment failed: {} (return code: {})'
+                    .format(align_fn, residual_aln.returncode)
+                    )
+        else:
+            print(
+                '[#] Using existing output \'{}\''.format(align_fn), 
+                file=sys.stderr
+            )
+        alignment_index[aln_key] = align_fn
+    
+    return alignment_index
+
+        
+def build_pair_index(
+    input_files, 
+    subset_index, 
+    subset_tag=None, 
+    subset_only=False
+):
+    pairs = {}
+    for q, s in permutations(sorted(input_files), 2):
+        alignment_key = (q, s)
+        paralogs = q == s
+        if subset_index and q in subset_index and not paralogs:
+            sub_fn = subset_name(q, file_tag=subset_tag)
+            sub_set = subset_index[q]
+            sub_q, kept_n = make_subset(q, sub_fn, keep_list=sub_set)
+            subset_size_check(q, sub_q, kept_n)
+            q = sub_q
+        elif subset_only is True:
+            continue
+        p = (q, s)
+        # if p not in pairs:
+        pairs[alignment_key] = p
+        
+    return pairs
+
+
+def get_residual_hits(hit_index, subset_index):
+    residual_index = defaultdict(set)
+    for pair, fwd_hits in hit_index.items():
+        q, s = pair
+        if subset_index and subset_index[s] is not None:
+            reverse_pair = (s, q)
+            rv_query_names = set(hit_index[reverse_pair].keys())
+            s_hits = set(h['name'] for h in fwd_hits.values())
+            residual = s_hits - rv_query_names
+            residual_index[s] |= residual
+    
+    return residual_index
+
+
+def build_hit_indices(alignments, args):
+    query_percentage = args.query_percentage_threshold
+    blast_file = args.blast_file
+    length_index = {}
+    hit_index = {}
+    residual_index = defaultdict(set)
+    for (q, s), aln in sorted(alignments.items(), key=lambda x: sorted(x[0])):
+        if blast_file:
+            aln = blast_file
+        # set flag if both files are the same
+        paralogs = q == s
+        if paralogs and (q, s) in hit_index:
+            continue
+        # add the lengths of all sequences to an index for later 
+        # tie-breaking of best hits
+        for e in (q, s):
+            if e not in length_index:
+                length_index[e] = seq_lengths(e)
+                # this is needed for the weird get_top_hits() API - might
+                # be better as a separate arg in the future...
+                length_index[e]['query_match_threshold'] = query_percentage
+        # get sets of query IDs to filter alignment lines to 
+        # relevant hits (matters in case of aggregate alignment file)
+        q_list = set(length_index[q].keys())
+        if query_percentage is not None:
+            q_lengths = length_index[q]
+        else:
+            q_lengths = {}
+        s_lengths = length_index[s]
+        top_hits, win_ledger = get_top_hits(
+            aln,
+            paralogs,
+            query_match=q_lengths,
+            seq_lengths=s_lengths,
+            ignore_same_id=args.ignore_same_id,
+            ignore_same_prefix=args.ignore_same_prefix,
+            query_list=q_list
+        )
+
+        hit_index[(q, s)] = top_hits
+
+        # # if the subject has a subset, include any hits from the query 
+        # # that might not be in the subject subset (and subset the 
+        # # subject to only those entries with hits from the query)
+        # if subset_index is not None and subset_index[s] is not None:
+        #     s_hits = set([h['name'] for h in top_hits])
+        #     # find subject hits from query that are not in subject index
+        #     # and add them to index of such hits
+        #     residual = s_hits - subset_index[s]
+        #     residual_index[s] |= residual
+
+    # return hit_index, residual_index
+    return hit_index
+
+
+# def get_alignments(
+#     input_files, 
+#     aligner, 
+#     run_type, 
+#     extra,
+#     overwrite=False, 
+#     subset_index=None, 
+#     file_dirs=None,
+#     blast_file=None
+# ):
+#     # get reciprologs for each pairwise permutation of files [(1, 2), (2, 1), ...]
+#     alignment_index = {}
+#     for q, s in permutations(sorted(input_files), 2):
+#         alignment_key = (q, s)
+#         if alignment_key in alignment_index:  # paralogs
+#             continue
+#         if subset_index and q in subset_index:
+#             sub_fn = subset_name(q)
+#             sub_set = subset_index[q]
+#             sub_q, kept_n = make_subset(q, sub_fn, keep_list=sub_set)
+#             subset_size_check(q, sub_q, kept_n)
+#             q = sub_q
+#         # this block might want to move to above the preceding if block...?
+#         if blast_file:
+#             alignment_index[alignment_key] = BLAST_FILE
+#             continue
+#         align_fn = alignment_filenames(q, s, run_type)['forward']
+#         if file_dirs:
+#             for d in file_dirs:
+#                 file_list = os.listdir(d)
+#                 if align_fn in file_list:
+#                     align_fn = os.path.join(
+#                             os.path.abspath(d), align_fn
+#                     )
+#                     break
+#         if not os.path.isfile(align_fn) or overwrite is True:
+#             alignment = align(
+#                 aligner, q, s, run_type, align_fn, extra_args=extra
+#             )
+#             if alignment.returncode != 0:
+#                 sys.exit(
+#                     '[!] ERROR: alignment failed: {} (return code: {})'
+#                     .format(align_fn, alignment.returncode)
+#                     )
+#         else:
+#             print(
+#                 '[#] Using existing output \'{}\''.format(align_fn), 
+#                 file=sys.stderr
+#             )
+#         alignment_index[alignment_key] = align_fn
+    
+#     return alignment_index
+
+
 parser = argparse.ArgumentParser(
     description=(
-        'Find reciprocal best hits between two or more files.'),
+        'Find reciprocal best hits between two or more files. '
+        'Any unrecognized arguments will be passed along to the chosen '
+        'alignment program.'),
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
 parser.add_argument(
@@ -654,6 +1105,18 @@ parser.add_argument(
         'relationships, e.g. A-B, A-C, A-D --> A-B-C-D')
 )
 parser.add_argument(
+    '--subset',
+    metavar=('subset_1', 'subset_2'),
+    nargs='+',
+    help=(
+        'Files containing subsets of headers to be used as queries for each '
+        'input file. Supplied in the same order as the input files; one header '
+        'per line. To omit a subset file for a given input file, '
+        'provide "." as the argument, e.g. for three input files with only 1 & '
+        '3 with subsets: --subsets subset_1 . subset_2'
+    )
+)
+parser.add_argument(
     '--ignore_same_id',
     action='store_true',
     help='ignore hits where both query and subject have identical IDs'
@@ -677,7 +1140,8 @@ parser.add_argument(
     '-d',
     '--alignment_source_directory',
     help='check for existing alignment files to use in this directory first',
-    nargs='+'
+    nargs='+',
+    metavar='dir'
 )
 parser.add_argument(
     '-b',
@@ -686,7 +1150,10 @@ parser.add_argument(
 )
 parser.add_argument(
     '--overwrite',
-    help='overwrite existing output files (instead of using to bypass alignment)',
+    help=(
+        'overwrite existing output files '
+        '(instead of using them to bypass alignment step)'
+    ),
     action='store_true'
 )
 parser.add_argument(
@@ -722,6 +1189,7 @@ IGNORE_SAME_PREFIX = args.ignore_same_prefix
 BLAST_FILE = args.blast_file
 OUTPUT_FILE = args.output
 ALIGNMENT_SOURCE_DIRS = args.alignment_source_directory
+SUBSET = args.subset
 
 ALIGN_PROG = 'palign'
 
@@ -741,33 +1209,164 @@ for k, v in call_options.items():
     if v:
         optional.extend([str(k), str(v)])
 
-# get reciprologs for each pairwise combo of files
-pairwise_reciprolog_sets = []
-for q, s in combinations(sorted(INPUT_FILES), 2):
-    reciprolog_set, win_ledger = pair_reciprologs(
-        q, 
-        s, 
+# if --subsets, generate list of subset files to match up with input files
+if SUBSET and len(SUBSET) != len(INPUT_FILES):
+    print(
+        '[!] Must supply as many arguments to --subset as there are input files', 
+        file=sys.stderr
+    )
+    sys.exit(1)
+
+def get_subset_set(subset_list_file):
+    subset = set()
+    with open(subset_list_file) as f:
+        for l in f:
+            subset.add(l.strip())
+
+    return subset
+
+# the default None values here are used as a check later on to 
+# indicate which files have associated subsets
+
+if SUBSET:
+    subset_index = {f: None for f in INPUT_FILES}
+    working_subsets = []
+    for s in SUBSET:
+        if s != '.':
+            s = get_subset_set(s)
+        working_subsets.append(s)
+        # working_name = '{}.working'.format(s)
+        # shutil.copy(s, working_name)
+        # working_subsets.append(working_name)
+    for f, s in zip(INPUT_FILES, working_subsets):
+        if s != '.':
+            subset_index[f] = s
+else:
+    subset_index = None
+
+
+"""
+SUBSET STEPS
+1. Align all subsets against all fulls, keeping track of all full hits
+2. Check subset hits to each file against that file's subsets, and use any 
+residual hits back to the corresponding full.
+
+"""
+
+# returns all *permutation* of alignments ([(0, 1), (1, 0), ...])
+# alignments = get_alignments(
+#     INPUT_FILES, 
+#     ALIGN_PROG, 
+#     RUN_TYPE, 
+#     EXTRA_ARGS, 
+#     overwrite=OVERWRITE,
+#     subset_index=subset_index,
+#     file_dirs=ALIGNMENT_SOURCE_DIRS,
+#     blast_file=BLAST_FILE
+# )
+
+
+"""
+For each alignment file:
+    1. Check for any hits to subject that were not included
+    in reverse blast
+    2. blast any residual subject hits against full query
+    3. Check for any hits to query that were not included in 
+    forward blast
+    4. blast any residual query hits against full subject
+    5. update top hits indices
+"""
+
+alignment_pairs = build_pair_index(
+    INPUT_FILES, subset_index, subset_tag='subset', subset_only=False)
+
+alignments = get_alignments(
+    alignment_pairs, 
+    ALIGN_PROG, 
+    RUN_TYPE, 
+    EXTRA_ARGS, 
+    overwrite=OVERWRITE,
+    file_dirs=ALIGNMENT_SOURCE_DIRS,
+    blast_file=BLAST_FILE
+)
+
+# hit_index, residual_index = build_hit_indices(alignments, args, subset_index=subset_index)
+hit_index = build_hit_indices(alignments, args)
+residual_index = get_residual_hits(hit_index, subset_index)
+
+if residual_index:
+    residual_pairs = build_pair_index(
+        INPUT_FILES, residual_index, subset_tag='residual', subset_only=True)
+
+    residual_alignments = get_alignments(
+        residual_pairs, 
+        ALIGN_PROG, 
         RUN_TYPE, 
-        QUERY_PERCENTAGE, 
-        optional, 
-        agg_blast=BLAST_FILE,
-        file_dirs=ALIGNMENT_SOURCE_DIRS)
-    if LOGGING:
-        ledger_file = '{}-{}.{}.log'.format(
-            abbreviate(q), abbreviate(s), args.run_type)
-        with open(ledger_file, 'w') as lf:
-            for query, info in sorted(win_ledger.items()):
-                winner = info['best']
-                loser_tuples = info['losers']
-                lf.write('>{}\t[{}]\n'.format(winner, query))
-                for loser in sorted(loser_tuples):
-                    lf.write('\t'.join(loser) + '\n')
+        EXTRA_ARGS, 
+        overwrite=OVERWRITE,
+        file_dirs=ALIGNMENT_SOURCE_DIRS,
+        blast_file=BLAST_FILE
+    )
+
+    residual_hit_index = build_hit_indices(
+        residual_alignments, args
+    )
+    
+    for k, v in residual_hit_index.items():
+        hit_index[k].update(v)
+
+# get all unique pairs (e.g. (0, 1) but not (1, 0)),
+# to then iterate over only the forward pairs and get 
+# reciprocal hits for each pair
+unique_pairs = set([tuple(sorted(e)) for e in hit_index])
+
+
+pairwise_reciprolog_sets = []
+for p in unique_pairs:
+    rv_key = tuple(sorted(p, reverse=True))
+    top_fwd = hit_index[p]
+    top_rv = hit_index[rv_key]
+    reciprolog_set = get_reciprocals(top_fwd, top_rv)
     if ONE_TO_ONE is True:
         reciprolog_set = remove_many_to_one(reciprolog_set)
+
     # remove score info
     reciprolog_set = [tuple(x[0:2]) for x in reciprolog_set]
-
     pairwise_reciprolog_sets.append(reciprolog_set)
+
+
+# # get reciprologs for each pairwise combo of files
+# pairwise_reciprolog_sets = []
+# for q, s in combinations(sorted(INPUT_FILES), 2):
+#     q_sub = subset_index[q]
+#     s_sub = subset_index[s]
+#     reciprolog_set, win_ledger = pair_reciprologs(
+#         q, 
+#         s, 
+#         RUN_TYPE, 
+#         QUERY_PERCENTAGE, 
+#         optional,
+#         query_subset=q_sub,
+#         subject_subset=s_sub,
+#         agg_blast=BLAST_FILE,
+#         file_dirs=ALIGNMENT_SOURCE_DIRS)
+#     if LOGGING:
+#         ledger_file = '{}-{}.{}.log'.format(
+#             abbreviate(q), abbreviate(s), args.run_type)
+#         with open(ledger_file, 'w') as lf:
+#             for query, info in sorted(win_ledger.items()):
+#                 winner = info['best']
+#                 loser_tuples = info['losers']
+#                 lf.write('>{}\t[{}]\n'.format(winner, query))
+#                 for loser in sorted(loser_tuples):
+#                     lf.write('\t'.join(loser) + '\n')
+#     if ONE_TO_ONE is True:
+#         reciprolog_set = remove_many_to_one(reciprolog_set)
+#     # remove score info
+#     reciprolog_set = [tuple(x[0:2]) for x in reciprolog_set]
+
+#     pairwise_reciprolog_sets.append(reciprolog_set)
+
 
 if CHAIN:
     reciprologs = aggregate_orthos_chained(pairwise_reciprolog_sets, USE_GRAPH)
