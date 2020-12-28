@@ -4,8 +4,6 @@
 ##!/usr/bin/python3
 # the above uses specific Python version; allows script name in top
 
-#TODO build-in query subsetting functionality
-
 # authorship information
 __author__ = 'Graham E. Larue'
 __maintainer__ = "Graham E. Larue"
