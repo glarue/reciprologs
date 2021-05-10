@@ -12,7 +12,7 @@ Otherwise, you can clone the `biogl` repo and source it locally (to run from any
 
 This script also requires [palign](https://github.com/glarue/palign) to run the alignment steps (using DIAMOND or BLAST), which you can clone and then add to your `PATH`:
 
-``git clone https://github.com/glarue/palign.git```
+```git clone https://github.com/glarue/palign.git```
 
 ### Usage info
 
