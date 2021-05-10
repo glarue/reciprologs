@@ -4,11 +4,15 @@ This script needs the [biogl](https://github.com/glarue/biogl) module to functio
 
 ```python3 -m pip install biogl```
 
-to add the package to a location reachable by your Python installation. 
+to add the package to a location reachable by your Python installation.
 
-Otherwise, you can clone the `biogl` repo and source it locally (to run from anywhere, you'll need to add it to your PYTHONPATH environmental variable, a process that varies by OS):
+Otherwise, you can clone the `biogl` repo and source it locally (to run from anywhere, you'll need to add it to your `PYTHONPATH` environmental variable, a process that varies by OS):
 
 ```git clone https://github.com/glarue/biogl.git```
+
+This script also requires [palign](https://github.com/glarue/palign) to run the alignment steps (using DIAMOND or BLAST), which you can clone and then add to your `PATH`:
+
+``git clone https://github.com/glarue/palign.git```
 
 ### Usage info
 
