@@ -22,14 +22,15 @@ This script also requires [palign](https://github.com/glarue/palign) to run the 
 
 ```
 usage: reciprologs [-h] [-p PARALLEL_PROCESSES] [-q PERCENTAGE] [--chain]
-                   [--ignore_same_id]
+                   [--subset subset_1 [subset_2 ...]] [--ignore_same_id]
                    [--ignore_same_prefix <prefix_delimiter>] [-o [OUTPUT]]
-                   [-d ALIGNMENT_SOURCE_DIRECTORY [ALIGNMENT_SOURCE_DIRECTORY ...]]
-                   [-b BLAST_FILE] [--overwrite] [--one_to_one] [--logging]
+                   [-d dir [dir ...]] [-b BLAST_FILE] [--overwrite]
+                   [--one_to_one] [--logging]
                    file_1 file_2 ... [file_1 file_2 ... ...]
                    {diamondp,diamondx,blastn,blastp,blastx,tblastn,tblastx}
 
-Find reciprocal best hits between two or more files.
+Find reciprocal best hits between two or more files. Any unrecognized
+arguments will be passed along to the chosen alignment program.
 
 positional arguments:
   file_1 file_2 ...     files to use to build reciprolog sets (space
@@ -44,11 +45,19 @@ optional arguments:
                         processes (default: 1)
   -q PERCENTAGE, --query_percentage_threshold PERCENTAGE
                         require a specified fraction of the query length to
-                        match in order for a hit to qualify (lowest allowable
-                        percentage (default: None)
+                        match in order for a hit to qualify (lowest
+                        allowable percentage (default: None)
   --chain               cluster reciprologs without requiring all-by-all
-                        pairwise relationships, e.g. A-B, A-C, A-D --> A-B-C-D
-                        (default: False)
+                        pairwise relationships, e.g. A-B, A-C, A-D --> A-B-
+                        C-D (default: False)
+  --subset subset_1 [subset_2 ...]
+                        Files containing subsets of headers to be used as
+                        queries for each input file. Supplied in the same
+                        order as the input files; one header per line. To
+                        omit a subset file for a given input file, provide
+                        "." as the argument, e.g. for three input files
+                        with only 1 & 3 with subsets: --subsets subset_1 .
+                        subset_2 (default: None)
   --ignore_same_id      ignore hits where both query and subject have
                         identical IDs (default: False)
   --ignore_same_prefix <prefix_delimiter>
@@ -57,20 +66,20 @@ optional arguments:
                         delimited by the specified <prefix_delimiter>
                         (default: None)
   -o [OUTPUT], --output [OUTPUT]
-                        output filename (if no argument is given, defaults to
-                        stdout) (default: stdout)
-  -d ALIGNMENT_SOURCE_DIRECTORY [ALIGNMENT_SOURCE_DIRECTORY ...], --alignment_source_directory ALIGNMENT_SOURCE_DIRECTORY [ALIGNMENT_SOURCE_DIRECTORY ...]
+                        output filename (if no argument is given, defaults
+                        to stdout) (default: stdout)
+  -d dir [dir ...], --alignment_source_directory dir [dir ...]
                         check for existing alignment files to use in this
                         directory first (default: None)
   -b BLAST_FILE, --blast_file BLAST_FILE
                         aggregated BLAST output to use (both directions)
                         (default: None)
-  --overwrite           overwrite existing output files (instead of using to
-                        bypass alignment) (default: False)
+  --overwrite           overwrite existing output files (instead of using
+                        them to bypass alignment step) (default: False)
   --one_to_one          remove any many-to-one reciprolog relationships in
                         each pairwise set, such that each member of each
-                        pairwise comparison is only present exactly one time
-                        in output (default: False)
+                        pairwise comparison is only present exactly one
+                        time in output (default: False)
   --logging             output a log of best-hit choice criteria (default:
                         False)
 ```
