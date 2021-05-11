@@ -818,6 +818,15 @@ def build_hit_indices(alignments, args):
     return hit_index
 
 
+def get_subset_set(subset_list_file):
+    subset = set()
+    with open(subset_list_file) as f:
+        for l in f:
+            subset.add(l.strip())
+
+    return subset
+
+
 parser = argparse.ArgumentParser(
     description=(
         'Find reciprocal best hits between two or more files. '
@@ -981,14 +990,6 @@ if SUBSET and len(SUBSET) != len(INPUT_FILES):
         file=sys.stderr
     )
     sys.exit(1)
-
-def get_subset_set(subset_list_file):
-    subset = set()
-    with open(subset_list_file) as f:
-        for l in f:
-            subset.add(l.strip())
-
-    return subset
 
 # the default None values here are used as a check later on to 
 # indicate which files have associated subsets
