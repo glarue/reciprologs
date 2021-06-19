@@ -92,6 +92,7 @@ from multiprocessing import cpu_count
 from collections import defaultdict
 from itertools import combinations, permutations
 from biogl import fasta_parse, get_runtime
+from hashlib import md5
 
 # use networkx library for fast ortholog clustering if available
 try:
@@ -283,9 +284,25 @@ def clean_reciprologs(reciprologs, subset_index=None):
     return cleaned
 
 
-def abbreviate(name, delimiter="."):
-    name = os.path.basename(name)  # in case of non-local file path
-    abbreviation = name.split(delimiter)[0]
+def file_md5(fn, buffer_size=65536):
+    hash = md5()
+
+    with open(fn, 'rb') as f:
+        while True:
+            data = f.read(buffer_size)
+            if not data:
+                break
+            hash.update(data)
+
+    return hash.hexdigest()
+
+
+def abbreviate(name, delimiter=".", use_hash=True):
+    local_name = os.path.basename(name)  # in case of non-local file path
+    abbreviation = local_name.split(delimiter)[0]
+    if use_hash is True:  # use shortened md5 hash to uniqueify name
+        hash = file_md5(name)[:7]
+        abbreviation = abbreviation + delimiter + hash
 
     return abbreviation
 
