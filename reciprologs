@@ -923,7 +923,7 @@ parser.add_argument(
 parser.add_argument(
     '-o',
     '--output',
-    help='output filename (if no argument is given, defaults to stdout)',
+    help='output filename',
     nargs='?',
     default='stdout'
 )
