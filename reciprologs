@@ -308,12 +308,18 @@ def abbreviate(name, delimiter=".", use_hash=True):
     return abbreviation
 
 
-def unique_filenames(*file_list):
-    abbreviated = [abbreviate(f) for f in file_list]
-    if len(set(abbreviated)) < len(abbreviated):  # not all are unique
-        return [os.path.basename(f) for f in file_list]
+def unique_filenames(*file_list, skip=None):
+    if skip is not None:
+        abbreviated = [
+            os.path.basename(f) if f in skip 
+            else abbreviate(f) for f in file_list
+        ]
     else:
-        return abbreviated
+        abbreviated = [os.path.basename(f) for f in file_list]
+    if len(set(abbreviated)) < len(abbreviated):  # not all are unique
+        abbreviated = [os.path.basename(f) for f in file_list]
+        
+    return abbreviated
 
 
 def concatenate(outname, file_list, clean=True):
@@ -576,8 +582,17 @@ def align(aligner, query, subject, run_type, output_name, extra_args=None):
 def alignment_filenames(query, subject, run_type):
     run_files = {}
 
-    fw_names = unique_filenames(query, subject)
-    rv_names = unique_filenames(subject, query)
+    # when subsetting is used, this hack will produce more obvious filenames
+    # that reflect which alignments were of subsets and which weren't
+    special_case_tags = ['_residual', '_subset']
+
+    no_abbrev = []
+    for f in [query, subject]:
+        if any(t in f for t in special_case_tags):
+            no_abbrev.append(f)
+
+    fw_names = unique_filenames(query, subject, skip=no_abbrev)
+    rv_names = unique_filenames(subject, query, skip=no_abbrev)
 
     run_files['forward'] = '{}-vs-{}.{}'.format(*fw_names, run_type)
     run_files['reverse'] = '{}-vs-{}.{}'.format(*rv_names, run_type)
@@ -672,7 +687,7 @@ def get_alignments(
     extra,
     overwrite=False, 
     file_dirs=None,
-    blast_file=None
+    blast_file=None,
 ):
     """
     <pairs_index> is a dictionary of the form {label: (q, s), ...}
@@ -692,8 +707,7 @@ def get_alignments(
                 file_list = os.listdir(d)
                 if align_fn in file_list:
                     align_fn = os.path.join(
-                            os.path.abspath(d), align_fn
-                    )
+                            os.path.abspath(d), align_fn)
                     break
         if not os.path.isfile(align_fn) or overwrite is True:
             alignment = align(
@@ -756,7 +770,7 @@ def build_pair_index(
     for q, s in permutations(sorted(input_files), 2):
         alignment_key = (q, s)
         paralogs = q == s
-        if subset_index and q in subset_index and not paralogs:
+        if subset_index and subset_index.get(q) and not paralogs:
             sub_fn = subset_name(q, file_tag=subset_tag)
             sub_set = subset_index[q]
             # check if subset file has already been made 
@@ -923,7 +937,10 @@ parser.add_argument(
 parser.add_argument(
     '-o',
     '--output',
-    help='output filename',
+    help=(
+        'output filename (use flag without argument for stdout; '
+        'omit flag to use auto-naming)'
+    ),
     nargs='?',
     default='stdout'
 )
@@ -932,7 +949,7 @@ parser.add_argument(
     '--alignment_source_directory',
     help='check for existing alignment files to use in this directory first',
     nargs='+',
-    metavar='dir'
+    metavar='path'
 )
 parser.add_argument(
     '-b',
@@ -1000,7 +1017,7 @@ for k, v in call_options.items():
     if v:
         optional.extend([str(k), str(v)])
 
-# if --subsets, generate list of subset files to match up with input files
+# if --subset, generate list of subset files to match up with input files
 if SUBSET and len(SUBSET) != len(INPUT_FILES):
     print(
         '[!] Must supply as many arguments to --subset as there are input files', 
@@ -1012,7 +1029,7 @@ if SUBSET and len(SUBSET) != len(INPUT_FILES):
 # indicate which files have associated subsets
 
 if SUBSET:
-    subset_index = {f: None for f in INPUT_FILES}
+    subset_index = {f: set() for f in INPUT_FILES}
     working_subsets = []
     for s in SUBSET:
         if s != '.':
@@ -1026,6 +1043,7 @@ if SUBSET:
             subset_index[f] = s
 else:
     subset_index = None
+
 
 alignment_pairs = build_pair_index(
     INPUT_FILES, subset_index, subset_tag='subset', subset_only=False)
@@ -1092,25 +1110,28 @@ else:
 
 reciprologs = clean_reciprologs(reciprologs, subset_index=subset_index)
 
-basename = '-'.join([abbreviate(f) for f in INPUT_FILES])
+basename = '-'.join(sorted([abbreviate(f) for f in INPUT_FILES]))
 
-if OUTPUT_FILE:
-    if OUTPUT_FILE == 'stdout':
-        out = sys.stdout
-        out_string = ''
+if len(reciprologs) == 0:
+    out_string = ''
+else:
+    if OUTPUT_FILE:
+        if OUTPUT_FILE == 'stdout':
+            out = sys.stdout
+            out_string = ''
+        else:
+            out = open(OUTPUT_FILE, 'w')
+            out_string = ': {}'.format(OUTPUT_FILE)
     else:
+        OUTPUT_FILE = '{}.{}.reciprologs'.format(basename, RUN_TYPE)
         out = open(OUTPUT_FILE, 'w')
         out_string = ': {}'.format(OUTPUT_FILE)
-else:
-    OUTPUT_FILE = '{}.{}.reciprologs'.format(basename, RUN_TYPE)
-    out = open(OUTPUT_FILE, 'w')
-    out_string = ': {}'.format(OUTPUT_FILE)
 
-for group in reciprologs:
-    out.write('\t'.join(group) + '\n')
+    for group in reciprologs:
+        out.write('\t'.join(group) + '\n')
 
-if OUTPUT_FILE != 'stdout':
-    out.close()
+    if OUTPUT_FILE != 'stdout':
+        out.close()
 
 runtime = get_runtime(t_start)
 
