@@ -308,11 +308,11 @@ def abbreviate(name, delimiter=".", use_hash=True):
     return abbreviation
 
 
-def unique_filenames(*file_list, skip=None):
+def unique_filenames(*file_list, skip=None, use_hash=True):
     if skip is not None:
         abbreviated = [
             os.path.basename(f) if f in skip 
-            else abbreviate(f) for f in file_list
+            else abbreviate(f, use_hash=use_hash) for f in file_list
         ]
     else:
         abbreviated = [os.path.basename(f) for f in file_list]
@@ -555,10 +555,10 @@ def make_subset(fasta, output_fn, keep_file=None, keep_list=None):
     return output_fn, kept
 
 
-def subset_name(fn, file_tag='subset'):
+def subset_name(fn, file_tag='subset', use_hash=True):
     if type(file_tag) is not str:
         file_tag = ''
-    out_fn = '{}_{}.fa'.format(abbreviate(fn), file_tag)
+    out_fn = '{}_{}.fa'.format(abbreviate(fn, use_hash=use_hash), file_tag)
 
     return out_fn
 
@@ -579,7 +579,7 @@ def align(aligner, query, subject, run_type, output_name, extra_args=None):
     return result
 
 
-def alignment_filenames(query, subject, run_type):
+def alignment_filenames(query, subject, run_type, use_hash=True):
     run_files = {}
 
     # when subsetting is used, this hack will produce more obvious filenames
@@ -591,8 +591,8 @@ def alignment_filenames(query, subject, run_type):
         if any(t in f for t in special_case_tags):
             no_abbrev.append(f)
 
-    fw_names = unique_filenames(query, subject, skip=no_abbrev)
-    rv_names = unique_filenames(subject, query, skip=no_abbrev)
+    fw_names = unique_filenames(query, subject, skip=no_abbrev, use_hash=use_hash)
+    rv_names = unique_filenames(subject, query, skip=no_abbrev, use_hash=use_hash)
 
     run_files['forward'] = '{}-vs-{}.{}'.format(*fw_names, run_type)
     run_files['reverse'] = '{}-vs-{}.{}'.format(*rv_names, run_type)
@@ -668,9 +668,9 @@ def subset_size_check(input_file, subset, kept_n):
         )
 
 
-def log_ledger(q, s, run_type, win_ledger):
+def log_ledger(q, s, run_type, win_ledger, use_hash=True):
     ledger_file = '{}-{}.{}.log'.format(
-        abbreviate(q), abbreviate(s), run_type)
+        abbreviate(q, use_hash=use_hash), abbreviate(s, use_hash=use_hash), run_type)
     with open(ledger_file, 'w') as lf:
         for query, info in sorted(win_ledger.items()):
             winner = info['best']
@@ -688,6 +688,7 @@ def get_alignments(
     overwrite=False, 
     file_dirs=None,
     blast_file=None,
+    use_hash=True
 ):
     """
     <pairs_index> is a dictionary of the form {label: (q, s), ...}
@@ -701,7 +702,7 @@ def get_alignments(
         if blast_file:
             alignment_index[alignment_key] = blast_file
             continue
-        align_fn = alignment_filenames(q, s, run_type)['forward']
+        align_fn = alignment_filenames(q, s, run_type, use_hash=use_hash)['forward']
         if file_dirs:
             for d in file_dirs:
                 file_list = os.listdir(d)
@@ -728,7 +729,7 @@ def get_alignments(
     return alignment_index
 
 
-def align_residuals(alignments, aligner, residual_index, args, overwrite=False):
+def align_residuals(alignments, aligner, residual_index, args, overwrite=False, use_hash=True):
     alignment_index = {}
     run_type = args.run_type
     extra = args.extra
@@ -737,10 +738,10 @@ def align_residuals(alignments, aligner, residual_index, args, overwrite=False):
         if q not in residual_index:
             continue
         r_sub_set = residual_index[q]
-        r_sub_fn = subset_name(q, file_tag='residual')
+        r_sub_fn = subset_name(q, file_tag='residual', use_hash=use_hash)
         r_sub, kept_n = make_subset(q, r_sub_fn, keep_list=r_sub_set)
         subset_size_check(q, r_sub, kept_n)
-        align_fn = alignment_filenames(q, s, run_type)['forward']
+        align_fn = alignment_filenames(q, s, run_type, use_hash=use_hash)['forward']
         if not os.path.isfile(align_fn) or overwrite is True:
             residual_aln = align(
                 aligner, r_sub, s, run_type, align_fn, extra_args=extra)
@@ -763,7 +764,8 @@ def build_pair_index(
     input_files, 
     subset_index, 
     subset_tag=None, 
-    subset_only=False
+    subset_only=False,
+    use_hash=True
 ):
     pairs = {}
     made = set()
@@ -771,7 +773,7 @@ def build_pair_index(
         alignment_key = (q, s)
         paralogs = q == s
         if subset_index and subset_index.get(q) and not paralogs:
-            sub_fn = subset_name(q, file_tag=subset_tag)
+            sub_fn = subset_name(q, file_tag=subset_tag, use_hash=use_hash)
             sub_set = subset_index[q]
             # check if subset file has already been made 
             # during this loop to avoid remaking recent files
@@ -977,6 +979,11 @@ parser.add_argument(
     help='output a log of best-hit choice criteria',
     action='store_true'
 )
+parser.add_argument(
+    '--no_hash_tag',
+    help='do not auto-tag output files with MD5 hashes of source files',
+    action='store_true'
+)
 
 t_start = time.time()
 
@@ -998,6 +1005,7 @@ BLAST_FILE = args.blast_file
 OUTPUT_FILE = args.output
 ALIGNMENT_SOURCE_DIRS = args.alignment_source_directory
 SUBSET = args.subset
+USE_HASHES = not args.no_hash_tag
 
 ALIGN_PROG = 'palign'
 
@@ -1046,7 +1054,7 @@ else:
 
 
 alignment_pairs = build_pair_index(
-    INPUT_FILES, subset_index, subset_tag='subset', subset_only=False)
+    INPUT_FILES, subset_index, subset_tag='subset', subset_only=False, use_hash=USE_HASHES)
 
 alignments = get_alignments(
     alignment_pairs, 
@@ -1055,7 +1063,8 @@ alignments = get_alignments(
     EXTRA_ARGS, 
     overwrite=OVERWRITE,
     file_dirs=ALIGNMENT_SOURCE_DIRS,
-    blast_file=BLAST_FILE
+    blast_file=BLAST_FILE,
+    use_hash=USE_HASHES
 )
 
 # hit_index, residual_index = build_hit_indices(alignments, args, subset_index=subset_index)
@@ -1064,7 +1073,12 @@ residual_index = get_residual_hits(hit_index, subset_index)
 
 if residual_index:
     residual_pairs = build_pair_index(
-        INPUT_FILES, residual_index, subset_tag='residual', subset_only=True)
+        INPUT_FILES, 
+        residual_index, 
+        subset_tag='residual', 
+        subset_only=True, 
+        use_hash=USE_HASHES
+    )
 
     residual_alignments = get_alignments(
         residual_pairs, 
@@ -1073,7 +1087,8 @@ if residual_index:
         EXTRA_ARGS, 
         overwrite=OVERWRITE,
         file_dirs=ALIGNMENT_SOURCE_DIRS,
-        blast_file=BLAST_FILE
+        blast_file=BLAST_FILE,
+        use_hash=USE_HASHES
     )
 
     residual_hit_index = build_hit_indices(
@@ -1110,7 +1125,7 @@ else:
 
 reciprologs = clean_reciprologs(reciprologs, subset_index=subset_index)
 
-basename = '-'.join(sorted([abbreviate(f) for f in INPUT_FILES]))
+basename = '-'.join(sorted([abbreviate(f, use_hash=USE_HASHES) for f in INPUT_FILES]))
 
 if len(reciprologs) == 0:
     out_string = ''
