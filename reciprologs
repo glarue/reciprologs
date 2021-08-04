@@ -556,9 +556,11 @@ def make_subset(fasta, output_fn, keep_file=None, keep_list=None):
 
 
 def subset_name(fn, file_tag='subset', use_hash=True):
-    if type(file_tag) is not str:
+    if type(file_tag) is not str or not file_tag:
         file_tag = ''
-    out_fn = '{}_{}.fa'.format(abbreviate(fn, use_hash=use_hash), file_tag)
+    else:
+        file_tag = '_{}'.format(file_tag)
+    out_fn = '{}{}.fa'.format(abbreviate(fn, use_hash=use_hash), file_tag)
 
     return out_fn
 
