@@ -298,27 +298,38 @@ def file_md5(fn, buffer_size=65536):
     return hash.hexdigest()
 
 
-def abbreviate(name, delimiter=".", use_hash=True):
+def abbreviate(name, delimiter=".", use_hash=True, keep_path=False):
     local_name = os.path.basename(name)  # in case of non-local file path
     abbreviation = local_name.split(delimiter)[0]
     if use_hash is True:  # use shortened md5 hash to uniqueify name
         hash = file_md5(name)[:7]
         abbreviation = abbreviation + delimiter + hash
+    
+    if keep_path is True:
+        file_path = os.path.dirname(os.path.abspath(name))
+        abbreviation = os.path.join(file_path, abbreviation)
 
     return abbreviation
 
 
-def unique_filenames(*file_list, skip=None, use_hash=True):
+def unique_filenames(*file_list, skip=None, use_hash=True, keep_path=False):
     if skip is not None:
         abbreviated = [
             os.path.basename(f) if f in skip 
-            else abbreviate(f, use_hash=use_hash) for f in file_list
+            else abbreviate(f, use_hash=use_hash) 
+            for f in file_list
         ]
     else:
         abbreviated = [os.path.basename(f) for f in file_list]
     if len(set(abbreviated)) < len(abbreviated):  # not all are unique
         abbreviated = [os.path.basename(f) for f in file_list]
-        
+    
+    if keep_path is True:  # add parent directory paths
+        dirpaths = [os.path.dirname(f) for f in file_list]
+        abbreviated = [
+            os.path.join(p, f) for p, f in zip(dirpaths, abbreviated)
+        ]
+
     return abbreviated
 
 
@@ -555,12 +566,14 @@ def make_subset(fasta, output_fn, keep_file=None, keep_list=None):
     return output_fn, kept
 
 
-def subset_name(fn, file_tag='subset', use_hash=True):
+def subset_name(fn, file_tag='subset', use_hash=True, keep_path=False):
     if type(file_tag) is not str or not file_tag:
         file_tag = ''
     else:
         file_tag = '_{}'.format(file_tag)
-    out_fn = '{}{}.fa'.format(abbreviate(fn, use_hash=use_hash), file_tag)
+    out_fn = '{}{}.fa'.format(
+        abbreviate(fn, use_hash=use_hash, keep_path=keep_path), file_tag
+    )
 
     return out_fn
 
@@ -775,7 +788,9 @@ def build_pair_index(
         alignment_key = (q, s)
         paralogs = q == s
         if subset_index and subset_index.get(q) and not paralogs:
-            sub_fn = subset_name(q, file_tag=subset_tag, use_hash=use_hash)
+            sub_fn = subset_name(
+                q, file_tag=subset_tag, use_hash=use_hash
+            )
             sub_set = subset_index[q]
             # check if subset file has already been made 
             # during this loop to avoid remaking recent files
