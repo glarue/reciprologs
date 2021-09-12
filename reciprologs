@@ -565,17 +565,6 @@ def make_subset(fasta, output_fn, keep_file=None, keep_list=None):
     return output_fn, kept
 
 
-# def subset_hash(fa, keep_set):
-#     """
-#     Generate a hash for a (sub)set of FASTA headers
-#     """
-#     for h, s in fasta_parse(fa, trim_header=False):
-#         trunc_header = h.split()[0]
-#         if trunc_header in keep_set:
-#             record = '>{}\n{}\n'.format(h, s)
-#             out.write(record)
-#             kept += 1
-
 def list_hash(string_list, length=3, sort_first=True):
     hash = md5()
     if sort_first is True:
