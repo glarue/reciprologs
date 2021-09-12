@@ -28,8 +28,8 @@ In use-cases with more than two files, `reciprologs` builds a graph representati
 usage: reciprologs [-h] [-p PARALLEL_PROCESSES] [-q PERCENTAGE] [--chain]
                    [--subset subset_1 [subset_2 ...]] [--ignore_same_id]
                    [--ignore_same_prefix <prefix_delimiter>] [-o [OUTPUT]]
-                   [-d dir [dir ...]] [-b BLAST_FILE] [--overwrite]
-                   [--one_to_one] [--logging]
+                   [-d path [path ...]] [-b BLAST_FILE] [--overwrite]
+                   [--one_to_one] [--logging] [--no_hash_tag]
                    file_1 file_2 ... [file_1 file_2 ... ...]
                    {diamondp,diamondx,blastn,blastp,blastx,tblastn,tblastx}
 
@@ -70,9 +70,10 @@ optional arguments:
                         delimited by the specified <prefix_delimiter>
                         (default: None)
   -o [OUTPUT], --output [OUTPUT]
-                        output filename (if no argument is given, defaults
-                        to stdout) (default: stdout)
-  -d dir [dir ...], --alignment_source_directory dir [dir ...]
+                        output filename (use flag without argument for
+                        stdout; omit flag to use auto-naming) (default:
+                        stdout)
+  -d path [path ...], --alignment_source_directory path [path ...]
                         check for existing alignment files to use in this
                         directory first (default: None)
   -b BLAST_FILE, --blast_file BLAST_FILE
@@ -86,4 +87,7 @@ optional arguments:
                         time in output (default: False)
   --logging             output a log of best-hit choice criteria (default:
                         False)
+  --no_hash_tag         do not auto-tag output files with MD5 hashes of
+                        source files (default: False)
+
 ```
