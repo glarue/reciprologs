@@ -287,7 +287,6 @@ def clean_reciprologs(reciprologs, subset_index=None):
 
 def file_md5(fn, buffer_size=65536):
     hash = md5()
-
     with open(fn, 'rb') as f:
         while True:
             data = f.read(buffer_size)
@@ -566,6 +565,27 @@ def make_subset(fasta, output_fn, keep_file=None, keep_list=None):
     return output_fn, kept
 
 
+# def subset_hash(fa, keep_set):
+#     """
+#     Generate a hash for a (sub)set of FASTA headers
+#     """
+#     for h, s in fasta_parse(fa, trim_header=False):
+#         trunc_header = h.split()[0]
+#         if trunc_header in keep_set:
+#             record = '>{}\n{}\n'.format(h, s)
+#             out.write(record)
+#             kept += 1
+
+def list_hash(string_list, length=3, sort_first=True):
+    hash = md5()
+    if sort_first is True:
+        string_list = sorted(string_list)
+    for s in string_list:
+        hash.update(s.encode())
+    
+    return hash.hexdigest()[:length]
+    
+
 def subset_name(fn, file_tag='subset', use_hash=True, keep_path=False):
     if type(file_tag) is not str or not file_tag:
         file_tag = ''
@@ -788,10 +808,15 @@ def build_pair_index(
         alignment_key = (q, s)
         paralogs = q == s
         if subset_index and subset_index.get(q) and not paralogs:
-            sub_fn = subset_name(
-                q, file_tag=subset_tag, use_hash=use_hash
-            )
+            # subset files are getting tagged twice—probably need to move
+            # tagging to a different function or something
             sub_set = subset_index[q]
+            subset_hash = list_hash(sub_set)
+            hash_tag = f'{subset_tag}_h{subset_hash}'
+            sub_fn = subset_name(
+                q, file_tag=hash_tag, use_hash=use_hash
+            )
+            
             # check if subset file has already been made 
             # during this loop to avoid remaking recent files
             # unnecessarily
@@ -820,6 +845,7 @@ def get_residual_hits(hit_index, subset_index):
             s_hits = set(h['name'] for h in fwd_hits.values())
             residual = s_hits - rv_query_names
             residual_index[s] |= residual
+            print(f'residual length for {s}: {len(residual_index[s])}', file=sys.stderr)  ###!!!
     
     return residual_index
 
