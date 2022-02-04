@@ -299,7 +299,7 @@ def abbreviate(name, delimiter=".", use_hash=True, keep_path=False):
     local_name = os.path.basename(name)  # in case of non-local file path
     abbreviation = local_name.split(delimiter)[0]
     if use_hash is True:  # use shortened md5 hash to uniqueify name
-        hash = file_md5(name)[:7]
+        hash = file_md5(name)[:5]
         abbreviation = abbreviation + delimiter + hash
     
     if keep_path is True:
