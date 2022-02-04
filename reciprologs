@@ -57,8 +57,7 @@ optional arguments:
                         (default: None)
   -o [OUTPUT], --output [OUTPUT]
                         output filename (use flag without argument for
-                        stdout; omit flag to use auto-naming) (default:
-                        stdout)
+                        auto-naming) (default: stdout)
   -d path [path ...], --alignment_source_directory path [path ...]
                         check for existing alignment files to use in this
                         directory first (default: None)
@@ -75,7 +74,6 @@ optional arguments:
                         False)
   --no_hash_tag         do not auto-tag output files with MD5 hashes of
                         source files (default: False)
-
 
 NOTE: Depends on palign
 
