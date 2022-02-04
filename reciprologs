@@ -972,8 +972,7 @@ parser.add_argument(
     '-o',
     '--output',
     help=(
-        'output filename (use flag without argument for stdout; '
-        'omit flag to use auto-naming)'
+        'output filename (use flag without argument for auto-naming)'
     ),
     nargs='?',
     default='stdout'
@@ -1134,7 +1133,6 @@ if residual_index:
 # to then iterate over only the forward pairs and get 
 # reciprocal hits for each pair
 unique_pairs = set([tuple(sorted(e)) for e in hit_index])
-
 
 pairwise_reciprolog_sets = []
 for p in unique_pairs:
