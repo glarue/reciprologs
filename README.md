@@ -20,7 +20,7 @@ This script also requires [palign](https://github.com/glarue/palign) to run the 
 
 #### Recommended: `networkx`
 
-In use-cases with more than two files, `reciprologs` builds a graph representation of all of the reciprocal best hits (RBH), which allows construction of maximal cliques where every member is an RBH of every other member (e.g. `A-B, A-C, B-C, A-D --> A-B-C, A-D`). In order to do this _efficiently_, the Python package [networkx](https://networkx.org/) is needed (via `pip` or otherwise). If you want less-strict requirements for clustering (e.g. `A-B, A-C, A-D --> A-B-C-D`), see the `--chain` argument.
+In use-cases with more than two files, `reciprologs` builds a graph representation of all of the reciprocal best hits (RBH), which allows construction of maximal cliques where every member is a RBH of every other member (e.g. `A-B, A-C, B-C, A-D --> A-B-C, A-D`). In order to do this _efficiently_, the Python package [networkx](https://networkx.org/) is needed (via `pip` or otherwise). If you want less-strict requirements for clustering (e.g. `A-B, A-C, A-D --> A-B-C-D`), see the `--chain` argument.
 
 ### Usage info
 
