@@ -8,7 +8,7 @@ This script needs the [biogl](https://github.com/glarue/biogl) module to functio
 
 to add the package to a location reachable by your Python installation.
 
-Otherwise, you can clone the `biogl` repo and source it locally (to run from anywhere, you'll need to add it to your `PYTHONPATH` environmental variable, a process that varies by OS):
+Otherwise, you can clone the `biogl` repo and source it locally (to run from anywhere, you'll need to add it to your `PYTHONPATH` environment variable, a process that varies by OS):
 
 ```git clone https://github.com/glarue/biogl.git```
 
