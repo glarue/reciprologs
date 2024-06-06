@@ -593,7 +593,7 @@ def align(aligner, query, subject, run_type, output_name, extra_args=None):
         query, 
         subject, 
         run_type,
-        '-o', 
+        '--output_name', 
         output_name
     ]
     result = subprocess.run(aligner_args + extra_args)
