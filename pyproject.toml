@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "reciprologs"
+version = "1.1.1"
+description = ""
+authors = ["Graham Larue <egrahamlarue@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+biogl = "^2.3.0"
+networkx = "^3.3"
+palign = {git = "https://github.com/glarue/palign.git"}
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
